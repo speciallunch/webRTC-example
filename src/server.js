@@ -15,6 +15,14 @@ const handleListen = () => {
   // console.log("Listening on ws://localhost:3000");
 };
 
+function onSocketClose() {
+  console.log("Disconnected from the Browser ❌");
+}
+
+function onMessage(msg) {
+  console.log("msg)", msg.toString());
+}
+
 /////////////////////////////////////////////////////////////
 const server = http.createServer(app); // http 서버
 const wss = new WebSocket.Server({ server }); // webSocket 서버. 인자로 http server를 넣어서 둘 다 쓸 수 있도록 함.
@@ -27,6 +35,8 @@ const wss = new WebSocket.Server({ server }); // webSocket 서버. 인자로 htt
 wss.on("connection", (socket) => {
   console.log("Connected to Server  ✅"); // 누군가가 websocket 서버로 연결을 함.
   socket.send("hello~");
+  socket.on("close", onSocketClose);
+  socket.on("message", onMessage);
 });
 
 // app.listen(3000, handleListen);
