@@ -16,19 +16,39 @@ const wsServer = SoketIO(httpServer); // ws 서버
 // http://localhost:3000/socket.io/socket.io.js
 
 wsServer.on("connection", (socket) => {
+  socket["nickname"] = "Anonymous"; // ※ JS Bracket Notation
+
   //Adds a listener that will be fired when any event is emitted.
   socket.onAny((event) => {
     console.log(`['${event}' Event]`);
   });
-  
-  // ws에서 message.type으로 구분하던것에서 event custom 가능
+
+  /**
+   * socket.on(eventName, callback)
+   * @param {string | symbol } eventName
+   * @param {Function} callback
+   * @returns {Socket}
+   * e.g. socket.on("news", (data, callback) => {})
+   */
   socket.on("enter_room", (roomName, a, b, c, d, done) => {
-    console.log(socket.id);
-    console.log(socket.rooms); // 기본적으로 User와 서버 사이의 soket.id를 룸이름으로 하는 private room이 있다 
-    setTimeout(() => {
-      done("hello from the backend"); //  back-end에서 실행시키는게 아니라, front-end에서 실행시키는 것!
-      // backend에서 실행시키면 보안문제가 생길 것! 
-    }, 3000);
+    socket.join(roomName);
+    done("hello from the backend"); // back-end에서 실행시키는게 아니라, front-end에서 실행시키는 것!
+    socket.to(roomName).emit("welcome", socket.nickname);
+  });
+
+  socket.on("new_message", (msg, room, done) => {
+    socket.to(room).emit("new_message", `${socket.nickname}: ${msg}`);
+    done(); // front-end에서 실행시키는 것!
+  });
+
+  socket.on("nickname", (nickname) => {
+    socket["nickname"] = nickname;
+  });
+
+  socket.on("disconnecting", () => {
+    socket.rooms.forEach((room) => {
+      socket.to(room).emit("bye", socket.nickname);
+    });
   });
 });
 
