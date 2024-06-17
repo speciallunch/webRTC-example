@@ -15,11 +15,30 @@ const httpServer = http.createServer(app); // http 서버
 const wsServer = SoketIO(httpServer); // ws 서버
 // http://localhost:3000/socket.io/socket.io.js
 
+function publicRooms() {
+  // const sids = wsServer.sockets.adapter.sids;
+  // const rooms = wsServer.sockets.adapter.rooms;
+  const {
+    sockets: {
+      adapter: { sids, rooms },
+    },
+  } = wsServer;
+  const publicRooms = [];
+  rooms.forEach((_, key) => {
+    if (sids.get(key) === undefined) {
+      // room ID를 socket ID에서 찾을 수 없다면, public room!
+      publicRooms.push(key);
+    }
+  });
+  return publicRooms;
+}
+
 wsServer.on("connection", (socket) => {
   socket["nickname"] = "Anonymous"; // ※ JS Bracket Notation
 
   //Adds a listener that will be fired when any event is emitted.
   socket.onAny((event) => {
+    console.log(wsServer.sockets.adapter); // 따로 설정 안하면 memony상에 존재 -> mongoDB로 교체해보자
     console.log(`['${event}' Event]`);
   });
 
@@ -34,6 +53,8 @@ wsServer.on("connection", (socket) => {
     socket.join(roomName);
     done("hello from the backend"); // back-end에서 실행시키는게 아니라, front-end에서 실행시키는 것!
     socket.to(roomName).emit("welcome", socket.nickname);
+    // ws server emit은 방 모두에게 보내는 emit
+    wsServer.sockets.emit("room_change", publicRooms());
   });
 
   socket.on("new_message", (msg, room, done) => {
@@ -49,6 +70,10 @@ wsServer.on("connection", (socket) => {
     socket.rooms.forEach((room) => {
       socket.to(room).emit("bye", socket.nickname);
     });
+  });
+
+  socket.on("disconnect", () => {
+    wsServer.sockets.emit("room_change", publicRooms());
   });
 });
 
