@@ -1,6 +1,7 @@
 import express from "express";
 import http from "http";
-import SoketIO from "socket.io";
+import { Server } from "socket.io";
+import { instrument } from "@socket.io/admin-ui";
 
 const app = express();
 
@@ -12,7 +13,16 @@ app.get("/*", (req, res) => res.redirect("/"));
 
 /////////////////////////////////////////////////////////////
 const httpServer = http.createServer(app); // http 서버
-const wsServer = SoketIO(httpServer); // ws 서버
+const wsServer = new Server(httpServer, {
+  cors: {
+    origin: ["https://admin.socket.io"],
+    credentials: true,
+  },
+}); // ws 서버
+instrument(wsServer, {
+  auth: false,
+  mode: "development",
+});
 // http://localhost:3000/socket.io/socket.io.js
 
 function publicRooms() {
@@ -24,6 +34,7 @@ function publicRooms() {
     },
   } = wsServer;
   const publicRooms = [];
+
   rooms.forEach((_, key) => {
     if (sids.get(key) === undefined) {
       // room ID를 socket ID에서 찾을 수 없다면, public room!
@@ -33,12 +44,16 @@ function publicRooms() {
   return publicRooms;
 }
 
+function countRoom(roomName) {
+  return wsServer.sockets.adapter.rooms.get(roomName)?.size;
+}
+
 wsServer.on("connection", (socket) => {
   socket["nickname"] = "Anonymous"; // ※ JS Bracket Notation
 
   //Adds a listener that will be fired when any event is emitted.
   socket.onAny((event) => {
-    console.log(wsServer.sockets.adapter); // 따로 설정 안하면 memony상에 존재 -> mongoDB로 교체해보자
+    // console.log(wsServer.sockets.adapter); // 따로 설정 안하면 memony상에 존재 -> mongoDB로 교체해보자
     console.log(`['${event}' Event]`);
   });
 
@@ -52,7 +67,7 @@ wsServer.on("connection", (socket) => {
   socket.on("enter_room", (roomName, a, b, c, d, done) => {
     socket.join(roomName);
     done("hello from the backend"); // back-end에서 실행시키는게 아니라, front-end에서 실행시키는 것!
-    socket.to(roomName).emit("welcome", socket.nickname);
+    socket.to(roomName).emit("welcome", socket.nickname, countRoom(roomName));
     // ws server emit은 방 모두에게 보내는 emit
     wsServer.sockets.emit("room_change", publicRooms());
   });
@@ -68,7 +83,7 @@ wsServer.on("connection", (socket) => {
 
   socket.on("disconnecting", () => {
     socket.rooms.forEach((room) => {
-      socket.to(room).emit("bye", socket.nickname);
+      socket.to(room).emit("bye", socket.nickname, countRoom(room) - 1);
     });
   });
 
