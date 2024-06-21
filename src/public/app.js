@@ -1,100 +1,144 @@
-const socket = io(); // io function이 알아서 socket.io를 실행하고 있는 서버를 찾음
-// 연결된 socket들도 자동으로 Map으로 관리
+const socket = io();
+
+const myFace = document.getElementById("myFace");
+const muteBtn = document.getElementById("muteAudio");
+const cameraBtn = document.getElementById("muteVideo");
+const camreaList = document.getElementById("cameras");
+const call = document.getElementById("call");
+
+call.hidden = true;
+
+let myStream;
+let muted = false;
+let cameraOff = false;
+let roomName;
+let myPeerConnection;
+
+async function getMedia(deviceId) {
+  const initialConstraints = {
+    audio: true,
+    video: { facingMode: "user" },
+  };
+  const cameraConstraints = {
+    audio: true,
+    video: { deviceId: { exact: deviceId } }, // require the specific camera
+  };
+
+  try {
+    myStream = await navigator.mediaDevices.getUserMedia(
+      deviceId ? cameraConstraints : initialConstraints
+    );
+    myFace.srcObject = myStream;
+    if (!deviceId) {
+      await getCameras(); // update camera list
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function getCameras() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter((device) => device.kind === "videoinput");
+    const currentCamera = myStream.getVideoTracks()[0];
+    cameras.forEach((camera) => {
+      const option = document.createElement("option");
+      option.value = camera.deviceId;
+      option.innerText = camera.label;
+      if (currentCamera.label === camera.label) {
+        option.selected = true;
+      }
+      camreaList.appendChild(option);
+    });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function handleMuteClick() {
+  myStream.getAudioTracks().forEach((track) => {
+    track.enabled = !track.enabled;
+    console.log(track);
+  });
+  if (!muted) {
+    muteBtn.innerText = "UnMute";
+    muted = true;
+  } else {
+    muteBtn.innerText = "Mute";
+    muted = false;
+  }
+}
+
+function handleCameraClick() {
+  myStream.getVideoTracks().forEach((track) => {
+    track.enabled = !track.enabled;
+    console.log(track);
+  });
+  if (!cameraOff) {
+    cameraBtn.innerText = "CameraON";
+    cameraOff = true;
+  } else {
+    cameraBtn.innerText = "CameraOFF";
+    cameraOff = false;
+  }
+}
+
+async function handleCameraChange() {
+  await getMedia(camreaList.value);
+}
+
+muteBtn.addEventListener("click", handleMuteClick);
+cameraBtn.addEventListener("click", handleCameraClick);
+camreaList.addEventListener("input", handleCameraChange);
+
+// Welcome Form (join a room)
 
 const welcome = document.getElementById("welcome");
-const form = welcome.querySelector("form");
-const room = document.getElementById("room");
+const welcomeFrom = welcome.querySelector("form");
 
-room.hidden = true;
-let roomName;
-
-function showRoom(msg) {
-  console.log(msg);
+async function initCall() {
+  // 2. join completed
   welcome.hidden = true;
-  room.hidden = false;
-  const h3 = room.querySelector("h3");
-  h3.innerText = `Room : ${roomName}`;
-  const msgForm = room.querySelector("#msg");
-  const nickForm = room.querySelector("#nick");
-  msgForm.addEventListener("submit", handleMessageSubmit);
-  nickForm.addEventListener("submit", handleNicknameSubmit);
+  call.hidden = false;
+  await getMedia();
+  makeConnection();
 }
 
-function addMessage(msg) {
-  const ul = room.querySelector("ul");
-  const li = document.createElement("li");
-  li.innerText = msg;
-  ul.appendChild(li);
-}
-
-function handleMessageSubmit(event) {
+async function handleWelcomeSubmit(event) {
+  // 1. join room
   event.preventDefault();
-  const input = room.querySelector("#msg input");
-  const msg = input.value;
-  socket.emit("new_message", input.value, roomName, () => {
-    addMessage(`You: ${msg}`);
-  });
-  input.value = "";
-}
-
-function handleNicknameSubmit(event) {
-  event.preventDefault();
-  const input = room.querySelector("#nick input");
-  socket.emit("nickname", input.value);
-  input.value = "";
-}
-
-function handleRoomSubmit(event) {
-  event.preventDefault();
-  const input = form.querySelector("input");
-
-  /**
-   * socket.emit(eventName[, ...args][, ack])
-   * @param {string | symbol } eventName
-   * @param {any[]} args ws와 달리
-   * @param {Function} ack 콜백
-   * @returns {true}
-   * ws에서 socket.send. ws처럼 makemessage(json<->string) 필요 없이 객체로 전달 가능
-   * string뿐만 아니라 number, 객체 등 2개 이상 보낼 수 있다
-   */
-  socket.emit(
-    "enter_room",
-    input.value,
-    { payload: input.value },
-    5,
-    "hello",
-    false,
-    showRoom
-  );
+  const input = welcomeFrom.querySelector("input");
+  await initCall();
+  socket.emit("join_room", input.value); // 타이밍 이슈때문에 initCall을 callback이 아닌 그 전에 불러야함
   roomName = input.value;
   input.value = "";
 }
 
-form.addEventListener("submit", handleRoomSubmit);
+welcomeFrom.addEventListener("submit", handleWelcomeSubmit);
 
-socket.on("welcome", (user, newCount) => {
-  const h3 = room.querySelector("h3");
-  h3.innerText = `Room : ${roomName} (${newCount}명)`;
-  addMessage(`[${user} joined!]`);
+socket.on("welcome", async () => {
+  // a. someone joined -> send offer to others
+  console.log("someone joined");
+  const offer = await myPeerConnection.createOffer();
+  myPeerConnection.setLocalDescription(offer);
+  console.log("sent the offer");
+  socket.emit("offer", offer, roomName);
 });
 
-socket.on("bye", (user, newCount) => {
-  const h3 = room.querySelector("h3");
-  h3.innerText = `Room : ${roomName} (${newCount}명)`;
-  addMessage(`[${user} left]`);
+socket.on("offer", async (offer) => {
+  // b. take & set someone's offer
+  myPeerConnection.setRemoteDescription(offer);
+  const answer = await myPeerConnection.createAnswer();
+  console.log(answer);
 });
 
-socket.on("new_message", addMessage);
+// RTC Code
 
-socket.on("room_change", (rooms) => {
-  const roomList = welcome.querySelector("ul");
-  roomList.innerHTML = "";
-  if (rooms.length === 0) {
-    return;
-  }
-  rooms.forEach((room) => {
-    const li = document.createElement("li");
-    li.innerText = room;
-    roomList.append(li);
+function makeConnection() {
+  // 3. make my peerconnection
+  myPeerConnection = new RTCPeerConnection();
+  myStream.getTracks().forEach((track) => {
+    myPeerConnection.addTrack(track, myStream);
   });
-});
+}
