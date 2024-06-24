@@ -86,6 +86,16 @@ function handleCameraClick() {
 
 async function handleCameraChange() {
   await getMedia(camreaList.value);
+  if (myPeerConnection) {
+    const videoTrack = myStream.getVideoTracks()[0];
+    const videoSender = myPeerConnection
+      .getSenders()
+      .find((sender) => sender.track.kind === "video");
+    console.log(videoSender);
+    // RTCRtpSender : control and obtain details about MediaStreamTrack sent to a remote peer
+    // 다른 브라우저로 보내진 비디오/오디오 데이터를 컨트롤
+    videoSender.replaceTrack(videoTrack);
+  }
 }
 
 muteBtn.addEventListener("click", handleMuteClick);
@@ -93,6 +103,7 @@ cameraBtn.addEventListener("click", handleCameraClick);
 camreaList.addEventListener("input", handleCameraChange);
 
 ///////////////////// Welcome Form (join a room) ///////////////////
+
 const welcome = document.getElementById("welcome");
 const welcomeFrom = welcome.querySelector("form");
 
