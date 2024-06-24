@@ -1,6 +1,8 @@
 import express from "express";
+import https from "https";
 import http from "http";
 import SoketIO from "socket.io";
+import fs from "fs";
 
 const app = express();
 
@@ -11,7 +13,12 @@ app.get("/", (req, res) => res.render("home"));
 app.get("/*", (req, res) => res.redirect("/"));
 
 /////////////////////////////////////////////////////////////
+var options = {
+  key: fs.readFileSync("cert.key"),
+  cert: fs.readFileSync("cert.crt"),
+};
 const httpServer = http.createServer(app); // http 서버
+// const httpServer = https.createServer(options, app); // https 서버
 const wsServer = SoketIO(httpServer);
 
 wsServer.on("connection", (socket) => {
@@ -35,6 +42,7 @@ wsServer.on("connection", (socket) => {
 
 const handleListen = () => {
   console.log("Listening on http://localhost:3000");
+  // console.log("Listening on https://localhost:3000");
   // console.log("Listening on ws://localhost:3000");
 };
 httpServer.listen(3000, handleListen);
